@@ -454,52 +454,7 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
-        {/* Dynamic Board Progress Status Indicators */}
-        <section className={`mb-8 border rounded-2xl p-5 transition-all duration-300 ${
-          darkMode ? 'bg-zinc-950 border-zinc-900 shadow-2xl' : 'bg-white border-slate-200 shadow-sm'
-        }`}>
-          <div className="flex items-center gap-2 mb-4">
-            <Sliders size={14} className="text-indigo-500" />
-            <h2 className={`text-xs font-bold uppercase tracking-wider ${darkMode ? 'text-zinc-400' : 'text-slate-500'}`}>Functional Tracking Workspace</h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {SCREEN_SETS.map((setName, idx) => {
-              const isDone = completedScreenSets[setName];
-              const ownerLog = getLastModifierOf(setName);
-              return (
-                <div key={idx} className={`p-4 rounded-xl border flex flex-col justify-between transition-all duration-300 group hover:-translate-y-0.5 ${
-                  isDone 
-                    ? (darkMode ? 'bg-emerald-950/10 border-emerald-900/40' : 'bg-emerald-50/20 border-emerald-200/80') 
-                    : (darkMode ? 'bg-zinc-900/30 border-zinc-800/60' : 'bg-slate-50/40 border-slate-200/80')
-                }`}>
-                  <div>
-                    <h3 className={`text-xs font-bold transition-colors ${darkMode ? 'text-zinc-200 group-hover:text-indigo-400' : 'text-slate-800 group-hover:text-indigo-600'}`} title={setName}>
-                      {setName.replace("CAMBRIDGEONE-", "")}
-                    </h3>
-                    <p className="text-[10px] text-zinc-400 mt-1.5 truncate">
-                      Last Modifier: <span className={`font-semibold ${darkMode ? 'text-zinc-300' : 'text-slate-600'}`}>{ownerLog ? ownerLog.devName : 'None'}</span>
-                    </p>
-                  </div>
-                  <div className="flex items-center justify-between mt-4 pt-2.5 border-t border-zinc-800/20">
-                    <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-md tracking-wider transition-colors ${isDone ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
-                      {isDone ? 'Finalized' : 'In Dev'}
-                    </span>
-                    <button 
-                      onClick={() => toggleScreenSetCompletion(setName)}
-                      className={`text-xs px-2.5 py-1 rounded-lg font-bold border transition-all duration-200 active:scale-95 ${
-                        isDone 
-                          ? (darkMode ? 'bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-sm') 
-                          : 'bg-indigo-600 text-white border-indigo-700 hover:bg-indigo-700'
-                      }`}
-                    >
-                      {isDone ? 'Reopen Channel' : 'Mark Done'}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
+       
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
