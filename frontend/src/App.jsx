@@ -25,7 +25,7 @@ import {
   Copy,
   Check,
   ShieldCheck,
-  SlidersHorizontal
+  Activity
 } from 'lucide-react';
 import AdminPanel from './AdminPanel';
 
@@ -36,7 +36,6 @@ const SCREEN_SETS = [
   "CAMBRIDGEONE-Child-RegistrationLogin"
 ];
 
-// const API_BASE_URL = "http://localhost:9000/api";
 const API_BASE_URL = "https://sap-cdc-tool.onrender.com/api";
 
 function CopyButton({ text, darkMode }) {
@@ -76,10 +75,13 @@ export default function App() {
   const [notification, setNotification] = useState(null);
   const [activeTab, setActiveTab] = useState("All Ledger Channels");
   
-  // View States: "dashboard" or "admin"
+  // View States
   const [viewMode, setViewMode] = useState("dashboard");
   const [adminPasswordInput, setAdminPasswordInput] = useState("");
   const [showAdminPasswordModal, setShowAdminPasswordModal] = useState(false);
+
+  // Backend Live Status System State: "connecting" | "pinging" | "online" | "offline"
+  const [backendStatus, setBackendStatus] = useState("connecting");
 
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem('cdc_theme') === 'dark';
@@ -119,28 +121,36 @@ export default function App() {
       if (!response.ok) throw new Error("Failed to sync matrix logs");
       const data = await response.json();
       setRecords(data);
+      setBackendStatus("online"); // Database connected cleanly
     } catch (error) {
+      setBackendStatus("offline");
       triggerToast(error.message, "error");
     }
   };
 
-  // 1. Core Data Sync Effect Loop
+  // 1. Fetch initial configuration data logs
   useEffect(() => {
     fetchLogs();
   }, []);
 
-  // 2. Render Spinning Keep-Alive Ping Engine Loop (Fires every 40 seconds to prevent cold starts)
+  // 2. Render Keeping-Alive Ping Loop (Fires every 40 seconds to prevent cold starts)
   useEffect(() => {
     const keepAlivePing = async () => {
+      setBackendStatus("pinging"); // Transition to yellow state
       try {
-        await fetch(`${API_BASE_URL}/logs`);
-        console.log("⚓ Render engine active keep-alive ping emitted successfully.");
+        const res = await fetch(`${API_BASE_URL}/logs`);
+        if (res.ok) {
+          setTimeout(() => setBackendStatus("online"), 1500); // Transition back to clean green
+        } else {
+          setBackendStatus("offline");
+        }
       } catch (err) {
-        console.warn("Keep-alive baseline check skipped on current sequence loop context.", err);
+        setBackendStatus("offline");
+        console.warn("Keep-alive target check skipped.", err);
       }
     };
 
-    const intervalId = setInterval(keepAlivePing, 40000); // 40,000ms = 40 seconds
+    const intervalId = setInterval(keepAlivePing, 40000);
     return () => clearInterval(intervalId);
   }, []);
 
@@ -229,7 +239,6 @@ export default function App() {
 
     const riskInfo = evaluateConflictRisk(selectedScreenSet);
 
-    // Structure raw metrics out explicitly as separate properties so the updated backend catches them cleanly
     try {
       const response = await fetch(`${API_BASE_URL}/logs`, {
         method: 'POST',
@@ -303,13 +312,11 @@ export default function App() {
       ...prev,
       [setName]: !prev[setName]
     }));
-    triggerToast(`Screen-Set deployment milestone changed.`);
+    triggerToast("Screen-Set deployment milestone changed.");
   };
 
-  // Secure Admin Authentication Verification Portal Router Gateway Method
   const verifyAndOpenAdmin = (e) => {
     e.preventDefault();
-    // Enforce uneditable hardcoded administrative gateway token matching structural rules
     if (adminPasswordInput === "@") {
       triggerToast("Access Granted: Administrative credentials verified.");
       setViewMode("admin");
@@ -322,21 +329,17 @@ export default function App() {
 
   const filteredRecords = records.filter(rec => {
     const sQuery = searchQuery.toLowerCase().trim();
-    const matchesSearch = !sQuery || 
-                          rec.ticketName?.toLowerCase().includes(sQuery) ||
-                          rec.devName?.toLowerCase().includes(sQuery) ||
-                          rec.screenSetName?.toLowerCase().includes(sQuery) ||
-                          rec.description?.toLowerCase().includes(sQuery) ||
-                          rec.backupScreenSet?.toLowerCase().includes(sQuery) ||
-                          rec.screenMadeByDev?.toLowerCase().includes(sQuery);
-    
-    const matchesTab = activeTab === "All Ledger Channels" || rec.screenSetName === activeTab;
-    return matchesSearch && matchesTab;
+    return !sQuery || 
+           rec.ticketName?.toLowerCase().includes(sQuery) ||
+           rec.devName?.toLowerCase().includes(sQuery) ||
+           rec.screenSetName?.toLowerCase().includes(sQuery) ||
+           rec.description?.toLowerCase().includes(sQuery) ||
+           rec.backupScreenSet?.toLowerCase().includes(sQuery) ||
+           rec.screenMadeByDev?.toLowerCase().includes(sQuery);
   });
 
   const activeRisk = evaluateConflictRisk(selectedScreenSet);
 
-  // Router view switch interception block wrapper
   if (viewMode === "admin") {
     return <AdminPanel onBack={() => setViewMode("dashboard")} darkMode={darkMode} />;
   }
@@ -356,7 +359,7 @@ export default function App() {
         </div>
       )}
 
-      {/* SECURE POPUP DIALOG GATE INTERCEPTING SYSTEM LOGS ACCESS */}
+      {/* Security Clear Modal */}
       {showAdminPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className={`p-6 rounded-2xl border w-full max-w-sm shadow-2xl transition-all ${
@@ -366,9 +369,6 @@ export default function App() {
               <LockKeyhole size={18} />
               <h3 className="text-sm font-black uppercase tracking-wider">Security Clear Required</h3>
             </div>
-            <p className="text-xs text-zinc-400 mb-4 leading-normal">
-              Please write down the configuration core passkey to fetch backend system developer accounts index data:
-            </p>
             <form onSubmit={verifyAndOpenAdmin} className="space-y-4">
               <input
                 type="password"
@@ -399,7 +399,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Top Navbar */}
+      {/* Top Navbar Header Component */}
       <header className={`sticky top-0 z-40 w-full border-b backdrop-blur-md transition-all duration-200 ${
         darkMode ? 'bg-zinc-950/70 border-zinc-900/80' : 'bg-white/80 border-slate-200/80 shadow-sm'
       }`}>
@@ -414,8 +414,31 @@ export default function App() {
             </div>
           </div>
           
-          <div className="flex items-center gap-3.5">
-            {/* Admin Settings Button Gateway Trigger link */}
+          {/* Status Matrix Indicators bar */}
+          <div className="flex items-center gap-4">
+            
+            {/* DYNAMIC PING ENGINE LIVE BLINKER MODULE */}
+            <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full border text-[11px] font-bold ${
+              darkMode ? 'bg-zinc-900/40 border-zinc-800' : 'bg-white border-slate-200 shadow-sm'
+            }`}>
+              <div className="relative flex h-2 w-2">
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                  backendStatus === 'online' ? 'bg-emerald-400' :
+                  backendStatus === 'pinging' ? 'bg-amber-400' : 'bg-rose-500'
+                }`}></span>
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                  backendStatus === 'online' ? 'bg-emerald-500' :
+                  backendStatus === 'pinging' ? 'bg-amber-500' : 'bg-rose-600'
+                }`}></span>
+              </div>
+              <span className={`uppercase text-[10px] tracking-wider font-mono ${darkMode ? 'text-zinc-400' : 'text-slate-600'}`}>
+                {backendStatus === 'online' && 'Render Live'}
+                {backendStatus === 'pinging' && 'Pinging Engine...'}
+                {backendStatus === 'connecting' && 'Connecting...'}
+                {backendStatus === 'offline' && 'Offline'}
+              </span>
+            </div>
+
             <button
               onClick={() => setShowAdminPasswordModal(true)}
               className="text-xs font-bold px-3 py-1.5 bg-red-600/10 border border-red-500/20 text-red-500 rounded-xl hover:bg-red-600/20 transition-all flex items-center gap-1.5"
@@ -452,10 +475,8 @@ export default function App() {
         </div>
       </header>
 
+      {/* Primary Dashboard Modules View wrapper grid */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
-       
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
           {/* Input Panel Fields form */}
@@ -569,7 +590,6 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* MANUAL INPUT FOR SCREENS BACKUP DETAILS */}
                     <div>
                       <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Screenset Backup Storage Details</label>
                       <div className="relative">
@@ -584,7 +604,6 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* MANUAL INPUT FOR METHODS STRATEGY DEPLOYMENT */}
                     <div>
                       <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Screenset Work Context Method</label>
                       <div className="relative">
@@ -647,7 +666,6 @@ export default function App() {
           {/* Right Column: Database Records Stream Cards */}
           <div className="lg:col-span-2 space-y-4">
             
-            {/* Screen-Set Tab Navigation Bar Layout */}
             <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
               {["All Ledger Channels", ...SCREEN_SETS].map((tabName, index) => (
                 <button
@@ -664,7 +682,6 @@ export default function App() {
               ))}
             </div>
 
-            {/* Filter Search Core Input Widget Header Panel */}
             <div className={`rounded-2xl border p-4 flex flex-col sm:flex-row gap-4 justify-between items-center transition-all ${
               darkMode ? 'bg-zinc-950 border-zinc-900' : 'bg-white border-slate-200 shadow-sm'
             }`}>
@@ -688,10 +705,9 @@ export default function App() {
               </div>
             </div>
 
-            {/* Matrix Card Items Streams List Rendering */}
             <div className="space-y-4.5">
               {filteredRecords.length === 0 ? (
-                <div className={`rounded-2xl border p-12 text-center border-dashed ${darkMode ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-slate-200'}`}>
+                <div className={`rounded-2xl border p-12 text-center border-dashed ${darkMode ? 'bg-zinc-950 border-zinc-900' : 'bg-white border-slate-200'}`}>
                   <p className="text-xs text-zinc-500 font-medium">No activity footsteps registered matching filter parameters.</p>
                 </div>
               ) : (
@@ -712,7 +728,6 @@ export default function App() {
                           : (darkMode ? 'bg-zinc-950 border-zinc-900 hover:border-zinc-800' : 'bg-white border-slate-200 hover:shadow-md')
                       }`}
                     >
-                      {/* Top Header Row Panel layout parameters mapping */}
                       <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-zinc-800/20 pr-8">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="bg-indigo-500/10 text-indigo-400 text-[10px] font-extrabold px-2 py-0.5 rounded uppercase tracking-wide">
@@ -742,7 +757,6 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* EXTRA MANUAL CAPTURE DETAILS MATRIX GRID */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 my-4">
                         <div className={`p-3 rounded-xl border flex flex-col gap-1 ${
                           darkMode ? 'bg-zinc-900/40 border-zinc-800/70' : 'bg-slate-50/60 border-slate-200/80'
@@ -773,7 +787,6 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Developer Profile Identifiers Info Row */}
                       <div className={`grid grid-cols-2 gap-4 py-2 px-3 rounded-xl border mb-3.5 text-xs ${
                         darkMode ? 'bg-zinc-900/20 border-zinc-900/60' : 'bg-slate-50/40 border-slate-100 shadow-inner'
                       }`}>
@@ -787,7 +800,6 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Content summary box text fields */}
                       <div className="pr-12">
                         <h4 className="text-[9px] uppercase font-bold tracking-wider text-zinc-500 mb-1">Delta Configuration Summary</h4>
                         <p className={`text-xs leading-relaxed font-normal whitespace-pre-wrap ${
@@ -797,7 +809,6 @@ export default function App() {
                         </p>
                       </div>
 
-                      {/* Clipboard hash copying section */}
                       <div className="mt-3 pt-2 border-t border-zinc-800/20 flex justify-between items-center pr-12">
                         <div className="flex items-center gap-1 text-[10px] text-zinc-500 font-mono">
                           <span>Object ID Reference: {record._id}</span>
@@ -805,7 +816,6 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Secure deletion action control element mapping wrapper */}
                       {isLogOwner && (
                         <button
                           type="button"
