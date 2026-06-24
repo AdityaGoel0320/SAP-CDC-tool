@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, 
   Clock, 
@@ -24,8 +24,10 @@ import {
   Trash2,
   Copy,
   Check,
-  UserCheck
+  ShieldCheck,
+  SlidersHorizontal
 } from 'lucide-react';
+import AdminPanel from './AdminPanel';
 
 const SCREEN_SETS = [
   "CAMBRIDGEONE-RegistrationLogin",
@@ -34,9 +36,9 @@ const SCREEN_SETS = [
   "CAMBRIDGEONE-Child-RegistrationLogin"
 ];
 
-const API_BASE_URL = "http://localhost:9000/api";
+// const API_BASE_URL = "http://localhost:9000/api";
+const API_BASE_URL = "https://sap-cdc-tool.onrender.com/api";
 
-// Reusable Copy to Clipboard Helper
 function CopyButton({ text, darkMode }) {
   const [copied, setCopied] = useState(false);
 
@@ -47,7 +49,7 @@ function CopyButton({ text, darkMode }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch (err) {
-      console.error("Failed to copy", err);
+      console.error("Failed to copy text into clipboard context", err);
     }
   };
 
@@ -55,14 +57,13 @@ function CopyButton({ text, darkMode }) {
     <button
       type="button"
       onClick={handleCopy}
-      className={`p-1 rounded transition-all duration-200 shrink-0 ${
+      className={`p-1.5 rounded-lg border transition-all duration-200 shrink-0 transform active:scale-90 ${
         copied
-          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
           : (darkMode 
-              ? 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800' 
-              : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100')
+              ? 'bg-zinc-800 border-zinc-700/60 text-zinc-400 hover:text-white' 
+              : 'bg-white border-slate-200 text-slate-500 hover:text-slate-800 shadow-sm')
       }`}
-      title="Copy text"
     >
       {copied ? <Check size={11} /> : <Copy size={11} />}
     </button>
@@ -75,9 +76,13 @@ export default function App() {
   const [notification, setNotification] = useState(null);
   const [activeTab, setActiveTab] = useState("All Ledger Channels");
   
+  // View States: "dashboard" or "admin"
+  const [viewMode, setViewMode] = useState("dashboard");
+  const [adminPasswordInput, setAdminPasswordInput] = useState("");
+  const [showAdminPasswordModal, setShowAdminPasswordModal] = useState(false);
+
   const [darkMode, setDarkMode] = useState(() => {
-    const savedTheme = localStorage.getItem('cdc_theme');
-    return savedTheme === 'dark';
+    return localStorage.getItem('cdc_theme') === 'dark';
   });
 
   const [completedScreenSets, setCompletedScreenSets] = useState(() => {
@@ -90,13 +95,13 @@ export default function App() {
     return saved ? JSON.parse(saved) : null;
   });
   
-  // Auth flow control triggers
+  // Auth view states
   const [isSignUpMode, setIsSignUpMode] = useState(false);
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authName, setAuthName] = useState("");
 
-  // Target log fields configuration context state structures
+  // Ledger state fields
   const [selectedScreenSet, setSelectedScreenSet] = useState("");
   const [ticketName, setTicketName] = useState("");
   const [description, setDescription] = useState("");
@@ -119,8 +124,24 @@ export default function App() {
     }
   };
 
+  // 1. Core Data Sync Effect Loop
   useEffect(() => {
     fetchLogs();
+  }, []);
+
+  // 2. Render Spinning Keep-Alive Ping Engine Loop (Fires every 40 seconds to prevent cold starts)
+  useEffect(() => {
+    const keepAlivePing = async () => {
+      try {
+        await fetch(`${API_BASE_URL}/logs`);
+        console.log("⚓ Render engine active keep-alive ping emitted successfully.");
+      } catch (err) {
+        console.warn("Keep-alive baseline check skipped on current sequence loop context.", err);
+      }
+    };
+
+    const intervalId = setInterval(keepAlivePing, 40000); // 40,000ms = 40 seconds
+    return () => clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
@@ -208,9 +229,7 @@ export default function App() {
 
     const riskInfo = evaluateConflictRisk(selectedScreenSet);
 
-    // Dynamic clean structured layout to safely hold string tags inside MongoDB description field
-    const complexDescriptionPayload = `[BACKUP: ${backupScreenSet}] [METHOD: ${screenMadeByDev}] — ${description}`;
-
+    // Structure raw metrics out explicitly as separate properties so the updated backend catches them cleanly
     try {
       const response = await fetch(`${API_BASE_URL}/logs`, {
         method: 'POST',
@@ -220,11 +239,13 @@ export default function App() {
           screenSetName: selectedScreenSet,
           devName: userSession.name,
           ticketName,
-          description: complexDescriptionPayload
+          backupScreenSet,
+          screenMadeByDev,
+          description
         })
       });
 
-      if (!response.ok) throw new Error("Database rejected current modification payload structure");
+      if (!response.ok) throw new Error("Database rejected payload document integration validation mapping.");
 
       triggerToast(riskInfo ? "High Risk Concurrent Change recorded safely!" : "Ledger log entry published.");
       setSelectedScreenSet("");
@@ -285,13 +306,29 @@ export default function App() {
     triggerToast(`Screen-Set deployment milestone changed.`);
   };
 
+  // Secure Admin Authentication Verification Portal Router Gateway Method
+  const verifyAndOpenAdmin = (e) => {
+    e.preventDefault();
+    // Enforce uneditable hardcoded administrative gateway token matching structural rules
+    if (adminPasswordInput === "@") {
+      triggerToast("Access Granted: Administrative credentials verified.");
+      setViewMode("admin");
+      setShowAdminPasswordModal(false);
+      setAdminPasswordInput("");
+    } else {
+      triggerToast("Access Denied: Invalid security clearance key token.", "error");
+    }
+  };
+
   const filteredRecords = records.filter(rec => {
     const sQuery = searchQuery.toLowerCase().trim();
     const matchesSearch = !sQuery || 
                           rec.ticketName?.toLowerCase().includes(sQuery) ||
                           rec.devName?.toLowerCase().includes(sQuery) ||
                           rec.screenSetName?.toLowerCase().includes(sQuery) ||
-                          rec.description?.toLowerCase().includes(sQuery);
+                          rec.description?.toLowerCase().includes(sQuery) ||
+                          rec.backupScreenSet?.toLowerCase().includes(sQuery) ||
+                          rec.screenMadeByDev?.toLowerCase().includes(sQuery);
     
     const matchesTab = activeTab === "All Ledger Channels" || rec.screenSetName === activeTab;
     return matchesSearch && matchesTab;
@@ -299,24 +336,70 @@ export default function App() {
 
   const activeRisk = evaluateConflictRisk(selectedScreenSet);
 
+  // Router view switch interception block wrapper
+  if (viewMode === "admin") {
+    return <AdminPanel onBack={() => setViewMode("dashboard")} darkMode={darkMode} />;
+  }
+
   return (
     <div className={`min-h-screen font-sans antialiased transition-colors duration-300 ${
-      darkMode ? 'bg-[#09090b] text-zinc-100' : 'bg-slate-50/50 text-slate-800'
+      darkMode ? 'bg-black text-zinc-100' : 'bg-slate-50/50 text-slate-800'
     }`}>
       
-      {/* Toast Alert Popups */}
+      {/* Toast Render Modals */}
       {notification && (
-        <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-4 py-3.5 rounded-2xl shadow-2xl border backdrop-blur-md transition-all duration-300 ${
-          notification.type === 'error' 
-            ? 'bg-red-500/10 border-red-500/20 text-red-400' 
-            : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+        <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-4 py-3.5 rounded-xl shadow-xl border backdrop-blur-md transition-all duration-300 ${
+          notification.type === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
         }`}>
           {notification.type === 'error' ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
           <span className="text-xs font-semibold tracking-tight">{notification.message}</span>
         </div>
       )}
 
-      {/* Top Main Navbar */}
+      {/* SECURE POPUP DIALOG GATE INTERCEPTING SYSTEM LOGS ACCESS */}
+      {showAdminPasswordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`p-6 rounded-2xl border w-full max-w-sm shadow-2xl transition-all ${
+            darkMode ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-slate-200'
+          }`}>
+            <div className="flex items-center gap-2 mb-4 text-red-500">
+              <LockKeyhole size={18} />
+              <h3 className="text-sm font-black uppercase tracking-wider">Security Clear Required</h3>
+            </div>
+            <p className="text-xs text-zinc-400 mb-4 leading-normal">
+              Please write down the configuration core passkey to fetch backend system developer accounts index data:
+            </p>
+            <form onSubmit={verifyAndOpenAdmin} className="space-y-4">
+              <input
+                type="password"
+                required
+                value={adminPasswordInput}
+                onChange={e => setAdminPasswordInput(e.target.value)}
+                placeholder="••••••••"
+                className={`w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-red-500/50 ${
+                  darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'
+                }`}
+              />
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => { setShowAdminPasswordModal(false); setAdminPasswordInput(""); }}
+                  className={`text-xs font-bold px-3 py-2 rounded-lg border ${
+                    darkMode ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800' : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="text-xs font-bold px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-all">
+                  Unlock Portal
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Top Navbar */}
       <header className={`sticky top-0 z-40 w-full border-b backdrop-blur-md transition-all duration-200 ${
         darkMode ? 'bg-zinc-950/70 border-zinc-900/80' : 'bg-white/80 border-slate-200/80 shadow-sm'
       }`}>
@@ -331,7 +414,16 @@ export default function App() {
             </div>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3.5">
+            {/* Admin Settings Button Gateway Trigger link */}
+            <button
+              onClick={() => setShowAdminPasswordModal(true)}
+              className="text-xs font-bold px-3 py-1.5 bg-red-600/10 border border-red-500/20 text-red-500 rounded-xl hover:bg-red-600/20 transition-all flex items-center gap-1.5"
+            >
+              <ShieldCheck size={14} />
+              <span>Admin Management</span>
+            </button>
+
             <button 
               onClick={() => setDarkMode(!darkMode)}
               className={`p-2 rounded-xl border transition-all duration-200 hover:scale-105 active:scale-95 ${
@@ -348,7 +440,7 @@ export default function App() {
                 <div className="w-5 h-5 rounded-md bg-indigo-600 text-white flex items-center justify-center font-extrabold text-[10px] uppercase">
                   {userSession.name.charAt(0)}
                 </div>
-                <span className={`text-xs font-semibold ${darkMode ? 'text-zinc-300' : 'text-slate-600'}`}>
+                <span className={`text-xs font-semibold tracking-tight ${darkMode ? 'text-zinc-300' : 'text-slate-600'}`}>
                   {userSession.name} <span className="opacity-40 font-normal font-mono text-[11px]">({userSession.email})</span>
                 </span>
                 <button onClick={handleLogout} className="text-zinc-400 hover:text-red-400 p-0.5 transition-colors">
@@ -362,7 +454,7 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
-        {/* Work Control Status Track Hub Monitor Panel */}
+        {/* Dynamic Board Progress Status Indicators */}
         <section className={`mb-8 border rounded-2xl p-5 transition-all duration-300 ${
           darkMode ? 'bg-zinc-950 border-zinc-900 shadow-2xl' : 'bg-white border-slate-200 shadow-sm'
         }`}>
@@ -384,12 +476,9 @@ export default function App() {
                     <h3 className={`text-xs font-bold transition-colors ${darkMode ? 'text-zinc-200 group-hover:text-indigo-400' : 'text-slate-800 group-hover:text-indigo-600'}`} title={setName}>
                       {setName.replace("CAMBRIDGEONE-", "")}
                     </h3>
-                    <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-zinc-400">
-                      <UserCheck size={11} className="text-zinc-500" />
-                      <span className="truncate">
-                        Modifier: <span className={`font-semibold ${darkMode ? 'text-zinc-300' : 'text-slate-600'}`}>{ownerLog ? ownerLog.devName : 'None'}</span>
-                      </span>
-                    </div>
+                    <p className="text-[10px] text-zinc-400 mt-1.5 truncate">
+                      Last Modifier: <span className={`font-semibold ${darkMode ? 'text-zinc-300' : 'text-slate-600'}`}>{ownerLog ? ownerLog.devName : 'None'}</span>
+                    </p>
                   </div>
                   <div className="flex items-center justify-between mt-4 pt-2.5 border-t border-zinc-800/20">
                     <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-md tracking-wider transition-colors ${isDone ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
@@ -414,16 +503,15 @@ export default function App() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* Form Side Control Panel */}
+          {/* Input Panel Fields form */}
           <div className="lg:col-span-1">
             <div className={`rounded-2xl border p-6 sticky top-24 transition-all duration-300 ${
               darkMode ? 'bg-zinc-950 border-zinc-900 shadow-2xl' : 'bg-white border-slate-200 shadow-sm'
             }`}>
               
               {!userSession ? (
-                /* Auth Form Panel Block Box */
                 <div>
-                  <div className="flex items-center gap-2 mb-4">
+                  <div className="flex items-center gap-2 mb-5">
                     <div className="w-1 h-4 bg-indigo-600 rounded-full"></div>
                     <h2 className={`text-sm font-bold uppercase tracking-wider ${darkMode ? 'text-white' : 'text-slate-900'}`}>
                       {isSignUpMode ? "Register Profile" : "Secure Account Gateway"}
@@ -470,14 +558,13 @@ export default function App() {
                     </button>
                   </form>
 
-                  <div className="mt-4 pt-3 border-t border-zinc-900/60 text-center">
-                    <button onClick={() => setIsSignUpMode(!isSignUpMode)} className="text-xs text-indigo-400 font-bold transition-colors">
+                  <div className="mt-5 pt-4 border-t border-zinc-900/60 text-center">
+                    <button onClick={() => setIsSignUpMode(!isSignUpMode)} className="text-xs text-indigo-400 hover:text-indigo-300 font-bold transition-colors">
                       {isSignUpMode ? "Return to Login Console" : "Request credentials setup"}
                     </button>
                   </div>
                 </div>
               ) : (
-                /* Primary Data Capture Interface Form */
                 <div>
                   <div className="flex items-center gap-2 mb-5">
                     <div className="w-1 h-4 bg-indigo-600 rounded-full"></div>
@@ -527,13 +614,13 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* MANUAL TEXT ENTRY FOR SCREENSET BACKUP TRACE */}
+                    {/* MANUAL INPUT FOR SCREENS BACKUP DETAILS */}
                     <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Screenset Backup Storage Status (Manual Type)</label>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Screenset Backup Storage Details</label>
                       <div className="relative">
                         <input
                           type="text" value={backupScreenSet} onChange={e => setBackupScreenSet(e.target.value)}
-                          placeholder="e.g. Snapshot_Captured_v2_24June"
+                          placeholder="e.g. Local_Export_v2_24June"
                           className={`w-full border rounded-xl pl-9 pr-3.5 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/40 ${
                             darkMode ? 'bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-700' : 'bg-slate-50 border-slate-200 text-slate-800 shadow-sm'
                           }`}
@@ -542,13 +629,13 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* MANUAL TEXT ENTRY FOR SCREEN MADE BY DEVELOPER */}
+                    {/* MANUAL INPUT FOR METHODS STRATEGY DEPLOYMENT */}
                     <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Screenset Work Context Method (Manual Type)</label>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Screenset Work Context Method</label>
                       <div className="relative">
                         <input
                           type="text" value={screenMadeByDev} onChange={e => setScreenMadeByDev(e.target.value)}
-                          placeholder="e.g. Local Export JSON Configuration Import"
+                          placeholder="e.g. UI Override Console Push"
                           className={`w-full border rounded-xl pl-9 pr-3.5 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500/40 ${
                             darkMode ? 'bg-zinc-900 border-zinc-800 text-white placeholder:text-zinc-700' : 'bg-slate-50 border-slate-200 text-slate-800 shadow-sm'
                           }`}
@@ -602,10 +689,10 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right Column: SaaS Audit Cards Feed */}
+          {/* Right Column: Database Records Stream Cards */}
           <div className="lg:col-span-2 space-y-4">
             
-            {/* Filter Group Headers */}
+            {/* Screen-Set Tab Navigation Bar Layout */}
             <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
               {["All Ledger Channels", ...SCREEN_SETS].map((tabName, index) => (
                 <button
@@ -622,13 +709,13 @@ export default function App() {
               ))}
             </div>
 
-            {/* Filter Search Component Hub */}
+            {/* Filter Search Core Input Widget Header Panel */}
             <div className={`rounded-2xl border p-4 flex flex-col sm:flex-row gap-4 justify-between items-center transition-all ${
               darkMode ? 'bg-zinc-950 border-zinc-900' : 'bg-white border-slate-200 shadow-sm'
             }`}>
               <div className="relative w-full sm:max-w-xs">
                 <input
-                  type="text" placeholder="Filter stream logs dynamically..."
+                  type="text" placeholder="Search across target stream logs..."
                   value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                   className={`w-full rounded-xl pl-9 pr-4 py-2 text-xs focus:outline-none border transition-all ${
                     darkMode 
@@ -646,11 +733,11 @@ export default function App() {
               </div>
             </div>
 
-            {/* List Output Stream mapping matching requirements */}
+            {/* Matrix Card Items Streams List Rendering */}
             <div className="space-y-4.5">
               {filteredRecords.length === 0 ? (
-                <div className={`rounded-2xl border p-12 text-center border-dashed ${darkMode ? 'bg-zinc-950 border-zinc-900' : 'bg-white border-slate-200'}`}>
-                  <p className="text-xs text-zinc-500 font-medium">No activity footsteps registered inside current stream target.</p>
+                <div className={`rounded-2xl border p-12 text-center border-dashed ${darkMode ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-slate-200'}`}>
+                  <p className="text-xs text-zinc-500 font-medium">No activity footsteps registered matching filter parameters.</p>
                 </div>
               ) : (
                 filteredRecords.map((record) => {
@@ -661,26 +748,6 @@ export default function App() {
                   
                   const isLogOwner = userSession && userSession.email === record.userId;
 
-                  // Secure String Parser Engine Regex replacements
-                  const extractField = (desc, keyword) => {
-                    if (!desc || !desc.includes(`[${keyword}: `)) return '';
-                    try {
-                      const start = desc.indexOf(`[${keyword}: `) + keyword.length + 3;
-                      const end = desc.indexOf(']', start);
-                      return desc.substring(start, end);
-                    } catch(e) { return ''; }
-                  };
-
-                  const rawBackup = extractField(record.description, "BACKUP");
-                  const rawDevSet = extractField(record.description, "METHOD");
-                  
-                  // Extract presentation description data text blocks cleanly
-                  let displayDesc = record.description;
-                  if (displayDesc.includes(" — ")) {
-                    const pieces = displayDesc.split(" — ");
-                    displayDesc = pieces[pieces.length - 1];
-                  }
-
                   return (
                     <div 
                       key={record._id} 
@@ -690,7 +757,7 @@ export default function App() {
                           : (darkMode ? 'bg-zinc-950 border-zinc-900 hover:border-zinc-800' : 'bg-white border-slate-200 hover:shadow-md')
                       }`}
                     >
-                      {/* Log Card Header Area */}
+                      {/* Top Header Row Panel layout parameters mapping */}
                       <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-zinc-800/20 pr-8">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="bg-indigo-500/10 text-indigo-400 text-[10px] font-extrabold px-2 py-0.5 rounded uppercase tracking-wide">
@@ -720,40 +787,38 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* DETAILED ATTRIBUTES DISPLAY MATRIX PANEL */}
+                      {/* EXTRA MANUAL CAPTURE DETAILS MATRIX GRID */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 my-4">
-                        {/* Backup Configuration Detail Card */}
                         <div className={`p-3 rounded-xl border flex flex-col gap-1 ${
                           darkMode ? 'bg-zinc-900/40 border-zinc-800/70' : 'bg-slate-50/60 border-slate-200/80'
                         }`}>
                           <span className="text-[9px] uppercase font-extrabold tracking-widest text-zinc-400 flex items-center gap-1.5">
-                            <Archive size={11} className="text-indigo-500" /> Screenset Backup State
+                            <Archive size={11} className="text-indigo-500" /> Screenset Backup Info
                           </span>
                           <div className="flex items-center justify-between gap-2 mt-1">
                             <p className={`text-xs font-semibold tracking-tight truncate ${darkMode ? 'text-zinc-200' : 'text-slate-700'}`}>
-                              {rawBackup || 'Direct Live Sync (No Local Copy Saved)'}
+                              {record.backupScreenSet || 'Direct Live Overwrite Sync Run'}
                             </p>
-                            {rawBackup && <CopyButton text={rawBackup} darkMode={darkMode} />}
+                            {record.backupScreenSet && <CopyButton text={record.backupScreenSet} darkMode={darkMode} />}
                           </div>
                         </div>
 
-                        {/* Deployment Method Detail Card */}
                         <div className={`p-3 rounded-xl border flex flex-col gap-1 ${
                           darkMode ? 'bg-zinc-900/40 border-zinc-800/70' : 'bg-slate-50/60 border-slate-200/80'
                         }`}>
                           <span className="text-[9px] uppercase font-extrabold tracking-widest text-zinc-400 flex items-center gap-1.5">
-                            <Wrench size={11} className="text-indigo-500" /> Work Context / Strategy
+                            <Wrench size={11} className="text-indigo-500" /> Deployment Context Method
                           </span>
                           <div className="flex items-center justify-between gap-2 mt-1">
                             <p className={`text-xs font-semibold tracking-tight truncate ${darkMode ? 'text-zinc-200' : 'text-slate-700'}`}>
-                              {rawDevSet || 'Manual Console Sync Sequence'}
+                              {record.screenMadeByDev || 'Manual Console Sync Execution'}
                             </p>
-                            {rawDevSet && <CopyButton text={rawDevSet} darkMode={darkMode} />}
+                            {record.screenMadeByDev && <CopyButton text={record.screenMadeByDev} darkMode={darkMode} />}
                           </div>
                         </div>
                       </div>
 
-                      {/* Author Developer Information Bar */}
+                      {/* Developer Profile Identifiers Info Row */}
                       <div className={`grid grid-cols-2 gap-4 py-2 px-3 rounded-xl border mb-3.5 text-xs ${
                         darkMode ? 'bg-zinc-900/20 border-zinc-900/60' : 'bg-slate-50/40 border-slate-100 shadow-inner'
                       }`}>
@@ -767,31 +832,30 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Core Content Body Summary Output */}
+                      {/* Content summary box text fields */}
                       <div className="pr-12">
                         <h4 className="text-[9px] uppercase font-bold tracking-wider text-zinc-500 mb-1">Delta Configuration Summary</h4>
-                        <p className={`text-xs leading-relaxed font-normal ${
+                        <p className={`text-xs leading-relaxed font-normal whitespace-pre-wrap ${
                           displayRiskFlag ? (darkMode ? 'text-red-300/90' : 'text-red-900/90') : (darkMode ? 'text-zinc-300' : 'text-slate-600')
                         }`}>
-                          {displayDesc}
+                          {record.description}
                         </p>
                       </div>
 
-                      {/* Copy unique Document ID link component */}
-                      <div className="mt-3 pt-2 border-t border-zinc-900/20 flex justify-between items-center pr-12">
+                      {/* Clipboard hash copying section */}
+                      <div className="mt-3 pt-2 border-t border-zinc-800/20 flex justify-between items-center pr-12">
                         <div className="flex items-center gap-1 text-[10px] text-zinc-500 font-mono">
-                          <span>Object ID: {record._id}</span>
+                          <span>Object ID Reference: {record._id}</span>
                           <CopyButton text={record._id} darkMode={darkMode} />
                         </div>
                       </div>
 
-                      {/* Owner Protected Trash Action Button */}
+                      {/* Secure deletion action control element mapping wrapper */}
                       {isLogOwner && (
                         <button
                           type="button"
                           onClick={() => handleDeleteLog(record._id, record.userId)}
-                          className="absolute bottom-5 right-5 text-red-400 p-2 rounded-xl bg bg-red-500/10 border  border-red-500/20 transition-all "
-                          title="Delete Log"
+                          className="absolute bottom-5 right-5 text-zinc-500 hover:text-red-400 p-2 rounded-xl bg-zinc-900/20 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all opacity-0 group-hover:opacity-100"
                         >
                           <Trash2 size={13} />
                         </button>

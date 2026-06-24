@@ -130,5 +130,43 @@ app.delete('/api/logs/:id', async (req, res) => {
   }
 });
 
+// --- ADMINISTRATIVE USER CONTROL ROUTES ---
+
+// 1. Fetch All Registered Developers
+// @route   GET /api/admin/users
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    // Select everything except the hashed passwords for security mapping
+    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    res.status(200).json(users);
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to extract developer profiles.', error: error.message });
+  }
+});
+
+// 2. Cascade Delete Developer Profile & Clear Ledger Logs
+// @route   DELETE /api/admin/users/:id
+app.delete('/api/admin/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Find the target user account doc
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'Target developer account not found.' });
+    }
+
+    // CASCADE OPERATION: Wipe out all audit trail logs created by this email identity
+    await ChangeLog.deleteMany({ userId: user.email });
+
+    // Wipe out the user profile account document itself
+    await User.findByIdAndDelete(id);
+
+    res.status(200).json({ message: `Account for ${user.name} and all their linked ledger logs cleared successfully.` });
+  } catch (error) {
+    res.status(500).json({ message: 'Administrative purge sequence failed.', error: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 9000;
 app.listen(PORT, () => console.log(`🚀 Core Service active on port ${PORT}`));
